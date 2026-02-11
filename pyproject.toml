@@ -38,14 +38,15 @@ dev = [
 ]
 
 [project.scripts]
-netping = "network_utils.cli:main"
+netping = "src.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/plantree/python-network-utils"
 Repository = "https://github.com/plantree/python-network-utils"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["src*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from network_utils.ping import (
+from src.ping import (
     PingResult,
     _checksum,
     _create_icmp_packet,
@@ -110,7 +110,7 @@ class TestPing:
         assert result.is_reachable is False
         assert "Cannot resolve" in result.error
 
-    @patch("network_utils.ping.socket.socket")
+    @patch("src.ping.socket.socket")
     @patch("socket.gethostbyname")
     def test_ping_permission_denied(self, mock_resolve, mock_socket):
         """Test ping without root privileges."""
@@ -122,8 +122,8 @@ class TestPing:
         assert result.is_reachable is False
         assert "Permission denied" in result.error
 
-    @patch("network_utils.ping.os.getpid", return_value=12345)
-    @patch("network_utils.ping.socket.socket")
+    @patch("src.ping.os.getpid", return_value=12345)
+    @patch("src.ping.socket.socket")
     @patch("socket.gethostbyname")
     def test_ping_success(self, mock_resolve, mock_socket_class, mock_getpid):
         """Test successful ping."""
@@ -155,14 +155,14 @@ class TestPing:
 class TestIsHostReachable:
     """Tests for is_host_reachable function."""
 
-    @patch("network_utils.ping.ping")
+    @patch("src.ping.ping")
     def test_host_reachable(self, mock_ping):
         """Test when host is reachable."""
         mock_ping.return_value = PingResult(host="8.8.8.8", is_reachable=True)
         assert is_host_reachable("8.8.8.8") is True
         mock_ping.assert_called_once_with("8.8.8.8", count=1, timeout=5)
 
-    @patch("network_utils.ping.ping")
+    @patch("src.ping.ping")
     def test_host_unreachable(self, mock_ping):
         """Test when host is unreachable."""
         mock_ping.return_value = PingResult(host="invalid.host", is_reachable=False)
@@ -196,7 +196,7 @@ class TestPingStream:
         assert len(lines) == 1
         assert "Cannot resolve" in lines[0]
 
-    @patch("network_utils.ping.socket.socket")
+    @patch("src.ping.socket.socket")
     @patch("socket.gethostbyname")
     def test_ping_stream_permission_denied(self, mock_resolve, mock_socket):
         """Test ping_stream without root privileges."""
