@@ -102,11 +102,11 @@ def _parse_icmp_reply(data: bytes, packet_id: int) -> Optional[tuple]:
     icmp_header = data[20:28]
     icmp_type, code, checksum, recv_id, seq = struct.unpack("!BBHHH", icmp_header)
 
-    # check code and checksum
-    if code != 0 or _checksum(icmp_header + data[28:]) != 0:
+    # Check checksum
+    if _checksum(icmp_header + data[28:]) != 0:
         return None
 
-    if icmp_type == ICMP_ECHO_REPLY and recv_id == packet_id:
+    if icmp_type == ICMP_ECHO_REPLY and code == 0 and recv_id == packet_id:
         return seq, ttl
 
     return None

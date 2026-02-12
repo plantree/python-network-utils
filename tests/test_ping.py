@@ -1,6 +1,8 @@
 """Tests for ping module."""
 
 import socket
+import struct
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,6 +17,9 @@ from src.ping import (
     ping_multiple,
     ping_stream,
 )
+
+# Get actual module reference (src.ping attribute is shadowed by the function)
+ping_module = sys.modules["src.ping"]
 
 
 class TestPingResult:
@@ -110,35 +115,36 @@ class TestPing:
         assert result.is_reachable is False
         assert "Cannot resolve" in result.error
 
-    @patch("src.ping.socket.socket")
+    @patch.object(ping_module, "socket")
     @patch("socket.gethostbyname")
-    def test_ping_permission_denied(self, mock_resolve, mock_socket):
+    def test_ping_permission_denied(self, mock_resolve, mock_socket_module):
         """Test ping without root privileges."""
         mock_resolve.return_value = "8.8.8.8"
-        mock_socket.side_effect = PermissionError()
+        mock_socket_module.socket.side_effect = PermissionError()
 
         result = ping("8.8.8.8", count=1)
 
         assert result.is_reachable is False
         assert "Permission denied" in result.error
 
-    @patch("src.ping.os.getpid", return_value=12345)
-    @patch("src.ping.socket.socket")
+    @patch.object(ping_module.os, "getpid", return_value=12345)
+    @patch.object(ping_module, "socket")
     @patch("socket.gethostbyname")
-    def test_ping_success(self, mock_resolve, mock_socket_class, mock_getpid):
+    def test_ping_success(self, mock_resolve, mock_socket_module, mock_getpid):
         """Test successful ping."""
         mock_resolve.return_value = "8.8.8.8"
 
         # Create mock socket
         mock_sock = MagicMock()
-        mock_socket_class.return_value = mock_sock
+        mock_socket_module.socket.return_value = mock_sock
+        mock_socket_module.AF_INET = socket.AF_INET
+        mock_socket_module.SOCK_RAW = socket.SOCK_RAW
+        mock_socket_module.getprotobyname.return_value = 1
 
         # Mock ICMP reply (IP header + ICMP header)
         # IP header: 20 bytes, TTL at byte 8
         ip_header = bytes([0] * 8 + [64] + [0] * 11)  # TTL = 64
         # ICMP header: type=0 (reply), code=0, checksum, id, seq
-        import struct
-
         packet_id = 12345 & 0xFFFF
         icmp_header = struct.pack("!BBHHH", 0, 0, 0, packet_id, 1)
         mock_reply = ip_header + icmp_header + bytes(56)
@@ -155,14 +161,14 @@ class TestPing:
 class TestIsHostReachable:
     """Tests for is_host_reachable function."""
 
-    @patch("src.ping.ping")
+    @patch.object(ping_module, "ping")
     def test_host_reachable(self, mock_ping):
         """Test when host is reachable."""
         mock_ping.return_value = PingResult(host="8.8.8.8", is_reachable=True)
         assert is_host_reachable("8.8.8.8") is True
         mock_ping.assert_called_once_with("8.8.8.8", count=1, timeout=5)
 
-    @patch("src.ping.ping")
+    @patch.object(ping_module, "ping")
     def test_host_unreachable(self, mock_ping):
         """Test when host is unreachable."""
         mock_ping.return_value = PingResult(host="invalid.host", is_reachable=False)
@@ -196,12 +202,12 @@ class TestPingStream:
         assert len(lines) == 1
         assert "Cannot resolve" in lines[0]
 
-    @patch("src.ping.socket.socket")
+    @patch.object(ping_module, "socket")
     @patch("socket.gethostbyname")
-    def test_ping_stream_permission_denied(self, mock_resolve, mock_socket):
+    def test_ping_stream_permission_denied(self, mock_resolve, mock_socket_module):
         """Test ping_stream without root privileges."""
         mock_resolve.return_value = "8.8.8.8"
-        mock_socket.side_effect = PermissionError()
+        mock_socket_module.socket.side_effect = PermissionError()
 
         lines = list(ping_stream("8.8.8.8", count=1))
 

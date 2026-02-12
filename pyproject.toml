@@ -38,7 +38,8 @@ dev = [
 ]
 
 [project.scripts]
-netping = "src.cli:main"
+netping = "src.ping_cli:main"
+nettraceroute = "src.traceroute_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/plantree/python-network-utils"
