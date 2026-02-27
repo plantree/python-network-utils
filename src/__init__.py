@@ -2,6 +2,12 @@
 
 __version__ = "0.1.0"
 
+from .ifconfig import (
+    InterfaceInfo,
+    get_all_interfaces,
+    get_interface_info,
+    ifconfig_stream,
+)
 from .ping import (
     PingResult,
     is_host_reachable,
@@ -9,7 +15,7 @@ from .ping import (
     ping_multiple,
     ping_stream,
 )
-from .traceroute import HopResult, TracerouteResult, traceroute_stream
+from .traceroute import traceroute_stream
 
 __all__ = [
     "ping",
@@ -17,8 +23,9 @@ __all__ = [
     "PingResult",
     "is_host_reachable",
     "ping_multiple",
-    "traceroute",
     "traceroute_stream",
-    "TracerouteResult",
-    "HopResult",
+    "ifconfig_stream",
+    "get_interface_info",
+    "get_all_interfaces",
+    "InterfaceInfo",
 ]

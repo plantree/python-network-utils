@@ -11,38 +11,12 @@ import os
 import socket
 import struct
 import time
-from dataclasses import dataclass
 from typing import Optional
 
 # ICMP types
 ICMP_ECHO_REQUEST = 8
 ICMP_ECHO_REPLY = 0
 ICMP_TIME_EXCEEDED = 11
-
-
-@dataclass
-class HopResult:
-    """Result for a single hop in traceroute."""
-
-    hop: int
-    ip: Optional[str] = None
-    hostname: Optional[str] = None
-    rtts: Optional[list[float]] = None
-    is_timeout: bool = False
-
-    def __post_init__(self):
-        if self.rtts is None:
-            self.rtts = []
-
-
-@dataclass
-class TracerouteResult:
-    """Complete traceroute result."""
-
-    host: str
-    hops: list[HopResult]
-    reached: bool = False
-    error: Optional[str] = None
 
 
 def _checksum(data: bytes) -> int:
