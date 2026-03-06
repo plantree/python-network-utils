@@ -1,6 +1,6 @@
 """Ping tool using ICMP sockets.
 
-Run with: sudo python -m network_utils <host>
+Run with: sudo python -m src.ping <host>
 Or: sudo .venv/bin/netping <host>
 """
 
@@ -103,7 +103,7 @@ def _parse_icmp_reply(data: bytes, packet_id: int) -> Optional[tuple]:
     icmp_type, code, checksum, recv_id, seq = struct.unpack("!BBHHH", icmp_header)
 
     # Check checksum
-    if _checksum(icmp_header + data[28:]) != 0:
+    if _checksum(data[20:]) != 0:
         return None
 
     if icmp_type == ICMP_ECHO_REPLY and code == 0 and recv_id == packet_id:

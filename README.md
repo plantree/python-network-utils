@@ -1,21 +1,21 @@
 # python-network-utils
 
-A Python library for network diagnostics using raw sockets and system interfaces. Provides ping, traceroute, and ifconfig functionality both as CLI tools and as a Python API.
+A Python library for network diagnostics using raw sockets and system APIs. Provides ping, traceroute, DNS lookup (dig), and network interface (ifconfig) functionality both as CLI tools and as a Python API.
 
 ## Features
 
 - **Ping**: ICMP-based ping with RTT statistics (min/avg/max)
 - **Traceroute**: Trace network path to destination using TTL manipulation
-- **Ifconfig**: Display network interface configuration (like Unix ifconfig)
-- **CLI Tools**: `netping`, `nettraceroute`, and `netifconfig` commands
+- **Dig**: DNS lookup with dig-style output (A, AAAA, MX, CNAME, NS, SOA, TXT, PTR)
+- **Ifconfig**: Display network interface configuration (IP, MAC, MTU, flags, stats)
+- **CLI Tools**: `netping`, `nettraceroute`, `netdig`, and `netifconfig` commands
 - **Programmatic API**: Use directly in Python code
 - **Streaming Output**: Real-time output via generators
 
 ## Requirements
 
 - Python 3.8+
-- Linux (for ifconfig and raw sockets)
-- Root/Administrator privileges (required for ping and traceroute)
+- Root/Administrator privileges (required for raw ICMP sockets)
 
 ## Installation
 
@@ -57,9 +57,14 @@ sudo netping -c 10 -t 3 8.8.8.8
 sudo nettraceroute google.com
 sudo nettraceroute -m 15 -t 2 -q 3 example.com
 
-# Display network interfaces (no root required)
-netifconfig
-netifconfig eth0
+# DNS lookup (no root required)
+netdig example.com
+netdig example.com MX
+netdig example.com AAAA -s 8.8.8.8
+
+# Network interface info (requires root)
+sudo netifconfig
+sudo netifconfig eth0
 ```
 
 #### netping options
@@ -77,6 +82,20 @@ netifconfig eth0
 | `-t, --timeout` | Timeout per probe (seconds) | 3 |
 | `-q, --probes` | Number of probes per hop | 3 |
 
+#### netdig options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `domain` | The domain name to query | (required) |
+| `record_type` | DNS record type (A, AAAA, MX, CNAME, NS, SOA, TXT, PTR) | A |
+| `-s, --server` | DNS server to query | System resolver |
+
+#### netifconfig options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `interface` | Specific interface to display | All interfaces |
+
 ### Python API
 
 ```python
@@ -87,12 +106,14 @@ from src import (
     is_host_reachable,
     PingResult,
     traceroute_stream,
-    ifconfig,
+    TracerouteResult,
+    HopResult,
     ifconfig_stream,
     get_interface_info,
     get_all_interfaces,
     InterfaceInfo,
 )
+from src.dig import dig, dig_stream, DNSResult, DNSRecord
 
 # Simple ping - returns PingResult dataclass
 result = ping("google.com", count=4, timeout=5)
@@ -121,17 +142,23 @@ for line in ping_stream("google.com", count=4):
 for line in traceroute_stream("google.com", max_hops=30, timeout=3, probes=3):
     print(line, end="")
 
-# Get all network interfaces
-interfaces = ifconfig()
-for iface in interfaces:
-    print(f"{iface.name}: {iface.ip_address}")
+# DNS lookup - returns DNSResult
+result = dig("example.com", "A")
+print(f"Server: {result.server}")
+print(f"Query time: {result.query_time_ms:.0f} ms")
+for record in result.anwsers:
+    print(f"{record.name} {record.ttl} IN {record.record_type} {record.data}")
 
-# Get specific interface info
-eth0 = get_interface_info("eth0")
-print(f"IP: {eth0.ip_address}, MAC: {eth0.mac_address}, MTU: {eth0.mtu}")
+# Stream dig output (dig-style formatting)
+for line in dig_stream("example.com", "MX", server="8.8.8.8"):
+    print(line, end="")
 
-# Stream ifconfig output (like command line)
-for line in ifconfig_stream():
+# Get network interface info
+for iface in get_all_interfaces():
+    print(f"{iface.name}: {iface.ip_address or 'no address'}")
+
+# Stream ifconfig output (ifconfig-style formatting)
+for line in ifconfig_stream("eth0"):
     print(line, end="")
 ```
 
@@ -152,13 +179,19 @@ for line in ifconfig_stream():
 |----------|-------------|---------|
 | `traceroute_stream(host, max_hops=30, timeout=3, probes=3)` | Traceroute with streaming output | `Generator[str]` |
 
+### Dig (DNS Lookup) Functions
+
+| Function | Description | Returns |
+|----------|-------------|---------|
+| `dig(domain, record_type="A", server=None, port=53, timeout=5)` | Perform a DNS query | `DNSResult` |
+| `dig_stream(domain, record_type="A", server=None)` | DNS query with dig-style streaming output | `Generator[str]` |
+
 ### Ifconfig Functions
 
 | Function | Description | Returns |
 |----------|-------------|---------|
-| `ifconfig(interface=None)` | Get interface info | `list[InterfaceInfo]` |
-| `ifconfig_stream(interface=None)` | Ifconfig with streaming output | `Generator[str]` |
-| `get_interface_info(ifname)` | Get info for specific interface | `InterfaceInfo` |
+| `ifconfig_stream(interface=None)` | Display interface info with streaming output | `Generator[str]` |
+| `get_interface_info(name)` | Get info for a specific interface | `InterfaceInfo` |
 | `get_all_interfaces()` | Get info for all interfaces | `list[InterfaceInfo]` |
 
 ### Data Classes
@@ -175,6 +208,60 @@ class PingResult:
     min_rtt: Optional[float] = None
     avg_rtt: Optional[float] = None
     max_rtt: Optional[float] = None
+    error: Optional[str] = None
+```
+
+#### HopResult
+```python
+@dataclass
+class HopResult:
+    hop: int
+    ip: Optional[str] = None
+    hostname: Optional[str] = None
+    rtts: Optional[list[float]] = None
+    is_timeout: bool = False
+```
+
+#### TracerouteResult
+```python
+@dataclass
+class TracerouteResult:
+    host: str
+    hops: list[HopResult]
+    reached: bool = False
+    error: Optional[str] = None
+```
+
+#### DNSRecord
+```python
+@dataclass
+class DNSRecord:
+    name: str
+    record_type: str
+    ttl: int
+    data: str
+    priority: Optional[int] = None  # For MX records
+```
+
+#### DNSResult
+```python
+@dataclass
+class DNSResult:
+    domain: str
+    record_type: str
+    server: str
+    port: int
+    query_time_ms: float
+    transaction_id: int = 0
+    flags: int = 0
+    qdcount: int = 0
+    ancount: int = 0
+    nscount: int = 0
+    arcount: int = 0
+    response_size: int = 0
+    anwsers: list[DNSRecord] = field(default_factory=list)
+    authority: list[DNSRecord] = field(default_factory=list)
+    additional: list[DNSRecord] = field(default_factory=list)
     error: Optional[str] = None
 ```
 
@@ -250,16 +337,19 @@ python-network-utils/
 ├── src/
 │   ├── __init__.py           # Package exports
 │   ├── __main__.py           # Module entry point
+│   ├── dig.py                # DNS lookup implementation
+│   ├── dig_cli.py            # CLI for netdig command
+│   ├── ifconfig.py           # Network interface info implementation
+│   ├── ifconfig_cli.py       # CLI for netifconfig command
 │   ├── ping.py               # ICMP ping implementation
 │   ├── ping_cli.py           # CLI for netping command
 │   ├── traceroute.py         # ICMP traceroute implementation
-│   ├── traceroute_cli.py     # CLI for nettraceroute command
-│   ├── ifconfig.py           # Network interface configuration
-│   └── ifconfig_cli.py       # CLI for netifconfig command
+│   └── traceroute_cli.py     # CLI for nettraceroute command
 ├── tests/
 │   ├── __init__.py
-│   ├── test_ping.py          # Unit tests for ping module
-│   └── test_ifconfig.py      # Unit tests for ifconfig module
+│   ├── test_dig.py           # Unit tests for dig module
+│   ├── test_ifconfig.py      # Unit tests for ifconfig module
+│   └── test_ping.py          # Unit tests for ping module
 ├── .flake8                   # Flake8 configuration
 ├── .gitignore
 ├── LICENSE
@@ -280,15 +370,13 @@ The ping tool sends ICMP Echo Request packets (type 8) and listens for ICMP Echo
 
 The traceroute tool sends ICMP Echo Request packets with incrementing TTL (Time To Live) values starting from 1. Each router along the path decrements the TTL, and when it reaches 0, the router sends back an ICMP Time Exceeded message (type 11). This allows mapping the network path to the destination.
 
+### Dig
+
+The dig tool builds raw DNS query packets and sends them via UDP to a DNS server (port 53). It parses the response including header flags, question, answer, authority, and additional sections. Output is formatted to match the standard `dig` command, including HEADER, FLAGS, and section-based record display. No root privileges required.
+
 ### Ifconfig
 
-The ifconfig tool uses Linux ioctl system calls to query network interface information:
-- IP address, netmask, broadcast via `SIOCGIFADDR`, `SIOCGIFNETMASK`, `SIOCGIFBRDADDR`
-- MAC address via `SIOCGIFHWADDR`
-- Interface flags via `SIOCGIFFLAGS`
-- MTU via `SIOCGIFMTU`
-- Statistics from `/sys/class/net/<interface>/statistics/`
-- IPv6 addresses from `/proc/net/if_inet6`
+The ifconfig tool uses Linux `ioctl` system calls to query network interface information including IP addresses, MAC addresses, MTU, flags, and traffic statistics. It reads `/proc/net/dev` for packet/byte counters and `/proc/net/if_inet6` for IPv6 addresses. Requires root privileges for some operations.
 
 ## License
 
