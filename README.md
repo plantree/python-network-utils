@@ -8,7 +8,8 @@ A Python library for network diagnostics using raw sockets and system APIs. Prov
 - **Traceroute**: Trace network path to destination using TTL manipulation
 - **Dig**: DNS lookup with dig-style output (A, AAAA, MX, CNAME, NS, SOA, TXT, PTR)
 - **Ifconfig**: Display network interface configuration (IP, MAC, MTU, flags, stats)
-- **CLI Tools**: `netping`, `nettraceroute`, `netdig`, and `netifconfig` commands
+- **Lsof**: List open network sockets with process info (`lsof -i` style output)
+- **CLI Tools**: `netping`, `nettraceroute`, `netdig`, `netifconfig`, and `netlsof` commands
 - **Programmatic API**: Use directly in Python code
 - **Streaming Output**: Real-time output via generators
 
@@ -65,6 +66,14 @@ netdig example.com AAAA -s 8.8.8.8
 # Network interface info (requires root)
 sudo netifconfig
 sudo netifconfig eth0
+
+# List open network sockets (requires root)
+sudo netlsof
+sudo netlsof -i :80
+sudo netlsof -p 1234
+sudo netlsof -t -s LISTEN
+sudo netlsof -u
+sudo netlsof --proto tcp6
 ```
 
 #### netping options
@@ -95,6 +104,18 @@ sudo netifconfig eth0
 | Option | Description | Default |
 |--------|-------------|---------|
 | `interface` | Specific interface to display | All interfaces |
+
+#### netlsof options
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `-i, --port` | Filter by port (e.g. `:80` or `80`) | All ports |
+| `-p, --pid` | Filter by process ID | All processes |
+| `-s, --state` | Filter by socket state (e.g. `LISTEN`, `ESTABLISHED`) | All states |
+| `-t, --tcp` | Show only TCP sockets | Off |
+| `-u, --udp` | Show only UDP sockets | Off |
+| `--proto` | Specific protocol (`tcp`, `tcp6`, `udp`, `udp6`; repeatable) | All |
+| `-S, --services` | Resolve port numbers to service names | Off |
 
 ### Python API
 
@@ -160,6 +181,18 @@ for iface in get_all_interfaces():
 # Stream ifconfig output (ifconfig-style formatting)
 for line in ifconfig_stream("eth0"):
     print(line, end="")
+
+# List open network sockets (lsof-style output)
+from src.lsof import lsof, lsof_stream, SocketInfo
+
+# Get structured socket data
+sockets = lsof(port=80, state="LISTEN")
+for s in sockets:
+    print(f"{s.process_name}:{s.pid} {s.local_address}:{s.local_port} ({s.state})")
+
+# Stream lsof output (lsof -i style formatting)
+for line in lsof_stream(protocols=["tcp"], state="LISTEN"):
+    print(line, end="")
 ```
 
 ## API Reference
@@ -193,6 +226,13 @@ for line in ifconfig_stream("eth0"):
 | `ifconfig_stream(interface=None)` | Display interface info with streaming output | `Generator[str]` |
 | `get_interface_info(name)` | Get info for a specific interface | `InterfaceInfo` |
 | `get_all_interfaces()` | Get info for all interfaces | `list[InterfaceInfo]` |
+
+### Lsof Functions
+
+| Function | Description | Returns |
+|----------|-------------|----------|
+| `lsof(protocols=None, port=None, pid=None, state=None)` | List open network sockets | `list[SocketInfo]` |
+| `lsof_stream(protocols=None, port=None, pid=None, state=None, resolve_services=False)` | Stream lsof-style output | `Generator[str]` |
 
 ### Data Classes
 
@@ -295,6 +335,25 @@ class InterfaceInfo:
     tx_dropped: int = 0
 ```
 
+#### SocketInfo
+```python
+@dataclass
+class SocketInfo:
+    protocol: str              # "tcp", "tcp6", "udp", or "udp6"
+    local_address: str
+    local_port: int
+    remote_address: str
+    remote_port: int
+    state: Optional[str]
+    inode: int
+    uid: int
+    tx_queue: int = 0
+    rx_queue: int = 0
+    pid: Optional[int] = None
+    process_name: Optional[str] = None
+    fd: Optional[int] = None
+```
+
 ## Development
 
 ### Running Tests
@@ -341,6 +400,8 @@ python-network-utils/
 │   ├── dig_cli.py            # CLI for netdig command
 │   ├── ifconfig.py           # Network interface info implementation
 │   ├── ifconfig_cli.py       # CLI for netifconfig command
+│   ├── lsof.py               # Open network sockets implementation
+│   ├── lsof_cli.py           # CLI for netlsof command
 │   ├── ping.py               # ICMP ping implementation
 │   ├── ping_cli.py           # CLI for netping command
 │   ├── traceroute.py         # ICMP traceroute implementation
@@ -349,6 +410,7 @@ python-network-utils/
 │   ├── __init__.py
 │   ├── test_dig.py           # Unit tests for dig module
 │   ├── test_ifconfig.py      # Unit tests for ifconfig module
+│   ├── test_lsof.py          # Unit tests for lsof module
 │   └── test_ping.py          # Unit tests for ping module
 ├── .flake8                   # Flake8 configuration
 ├── .gitignore
@@ -377,6 +439,10 @@ The dig tool builds raw DNS query packets and sends them via UDP to a DNS server
 ### Ifconfig
 
 The ifconfig tool uses Linux `ioctl` system calls to query network interface information including IP addresses, MAC addresses, MTU, flags, and traffic statistics. It reads `/proc/net/dev` for packet/byte counters and `/proc/net/if_inet6` for IPv6 addresses. Requires root privileges for some operations.
+
+### Lsof
+
+The lsof tool reads `/proc/net/{tcp,tcp6,udp,udp6}` to enumerate open network sockets, parsing hex-encoded addresses, ports, states, UIDs, and inodes. It then scans `/proc/[pid]/fd/` to map socket inodes back to processes. Output is formatted to match `lsof -i`, showing COMMAND, PID, USER, FD, TYPE, DEVICE, NODE, and NAME columns. Requires root privileges to see all processes.
 
 ## License
 
