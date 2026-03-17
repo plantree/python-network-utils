@@ -43,6 +43,7 @@ netping = "src.ping_cli:main"
 nettraceroute = "src.traceroute_cli:main"
 netifconfig = "src.ifconfig_cli:main"
 netlsof = "src.lsof_cli:main"
+netcurl = "src.curl_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/plantree/python-network-utils"

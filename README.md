@@ -1,6 +1,6 @@
 # python-network-utils
 
-A Python library for network diagnostics using raw sockets and system APIs. Provides ping, traceroute, DNS lookup (dig), and network interface (ifconfig) functionality both as CLI tools and as a Python API.
+A Python library for network diagnostics using raw sockets and system APIs. Provides ping, traceroute, DNS lookup (dig), network interface (ifconfig), open-socket listing (lsof), and HTTP transfer (curl) functionality both as CLI tools and as a Python API.
 
 ## Features
 
@@ -9,7 +9,8 @@ A Python library for network diagnostics using raw sockets and system APIs. Prov
 - **Dig**: DNS lookup with dig-style output (A, AAAA, MX, CNAME, NS, SOA, TXT, PTR)
 - **Ifconfig**: Display network interface configuration (IP, MAC, MTU, flags, stats)
 - **Lsof**: List open network sockets with process info (`lsof -i` style output)
-- **CLI Tools**: `netping`, `nettraceroute`, `netdig`, `netifconfig`, and `netlsof` commands
+- **Curl**: HTTP transfer using raw TCP sockets and TLS (no `requests` / `http.client`)
+- **CLI Tools**: `netping`, `nettraceroute`, `netdig`, `netifconfig`, `netlsof`, and `netcurl` commands
 - **Programmatic API**: Use directly in Python code
 - **Streaming Output**: Real-time output via generators
 
@@ -74,6 +75,14 @@ sudo netlsof -p 1234
 sudo netlsof -t -s LISTEN
 sudo netlsof -u
 sudo netlsof --proto tcp6
+
+# HTTP transfer (no root required)
+netcurl http://example.com
+netcurl -I https://example.com
+netcurl -v https://example.com
+netcurl -X POST -d '{"key":"val"}' -H 'Content-Type: application/json' https://httpbin.org/post
+netcurl -L http://example.com         # follow redirects
+netcurl -o output.html https://example.com
 ```
 
 #### netping options
@@ -116,6 +125,22 @@ sudo netlsof --proto tcp6
 | `-u, --udp` | Show only UDP sockets | Off |
 | `--proto` | Specific protocol (`tcp`, `tcp6`, `udp`, `udp6`; repeatable) | All |
 | `-S, --services` | Resolve port numbers to service names | Off |
+
+#### netcurl options
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `url` | The URL to request | (required) |
+| `-X, --request` | HTTP method | GET |
+| `-H, --header` | Add a request header (repeatable) | — |
+| `-d, --data` | Request body (implies POST if -X not set) | — |
+| `-I, --head` | Fetch headers only (HEAD request) | Off |
+| `-i, --include` | Include response headers in output | Off |
+| `-v, --verbose` | Show request and response headers | Off |
+| `-L, --location` | Follow redirects | Off |
+| `-o, --output` | Write body to FILE | stdout |
+| `-t, --timeout` | Timeout in seconds | 30 |
+| `-s, --silent` | Suppress progress/error messages | Off |
 
 ### Python API
 
@@ -193,6 +218,32 @@ for s in sockets:
 # Stream lsof output (lsof -i style formatting)
 for line in lsof_stream(protocols=["tcp"], state="LISTEN"):
     print(line, end="")
+
+# HTTP transfer (curl-style)
+from src.curl import curl, curl_stream, CurlResult
+
+# Simple GET request
+result = curl("http://example.com")
+print(f"Status: {result.status_code} {result.reason}")
+print(f"Body length: {len(result.body)} bytes")
+print(f"Elapsed: {result.elapsed_ms:.0f} ms")
+
+# POST with JSON
+result = curl(
+    "https://httpbin.org/post",
+    method="POST",
+    headers={"Content-Type": "application/json"},
+    data='{"key": "value"}',
+)
+print(result.body.decode())
+
+# Follow redirects
+result = curl("http://example.com", follow_redirects=True)
+print(f"Redirects: {result.redirect_count}")
+
+# Stream curl output (curl-style formatting)
+for line in curl_stream("http://example.com", verbose=True):
+    print(line, end="")
 ```
 
 ## API Reference
@@ -233,6 +284,13 @@ for line in lsof_stream(protocols=["tcp"], state="LISTEN"):
 |----------|-------------|----------|
 | `lsof(protocols=None, port=None, pid=None, state=None)` | List open network sockets | `list[SocketInfo]` |
 | `lsof_stream(protocols=None, port=None, pid=None, state=None, resolve_services=False)` | Stream lsof-style output | `Generator[str]` |
+
+### Curl Functions
+
+| Function | Description | Returns |
+|----------|-------------|----------|
+| `curl(url, method="GET", headers=None, data=None, timeout=30, follow_redirects=False)` | Perform an HTTP request | `CurlResult` |
+| `curl_stream(url, method="GET", ..., verbose=False, follow_redirects=False)` | Stream curl-style output | `Generator[str]` |
 
 ### Data Classes
 
@@ -354,6 +412,26 @@ class SocketInfo:
     fd: Optional[int] = None
 ```
 
+#### CurlResult
+```python
+@dataclass
+class CurlResult:
+    url: str
+    effective_url: str
+    method: str
+    http_version: str = "HTTP/1.1"
+    status_code: int = 0
+    reason: str = ""
+    request_headers: Dict[str, str] = field(default_factory=dict)
+    response_headers: Dict[str, str] = field(default_factory=dict)
+    body: bytes = b""
+    elapsed_ms: float = 0.0
+    redirect_count: int = 0
+    remote_ip: str = ""
+    remote_port: int = 0
+    error: Optional[str] = None
+```
+
 ## Development
 
 ### Running Tests
@@ -402,6 +480,8 @@ python-network-utils/
 │   ├── ifconfig_cli.py       # CLI for netifconfig command
 │   ├── lsof.py               # Open network sockets implementation
 │   ├── lsof_cli.py           # CLI for netlsof command
+│   ├── curl.py               # HTTP transfer implementation
+│   ├── curl_cli.py           # CLI for netcurl command
 │   ├── ping.py               # ICMP ping implementation
 │   ├── ping_cli.py           # CLI for netping command
 │   ├── traceroute.py         # ICMP traceroute implementation
@@ -411,6 +491,7 @@ python-network-utils/
 │   ├── test_dig.py           # Unit tests for dig module
 │   ├── test_ifconfig.py      # Unit tests for ifconfig module
 │   ├── test_lsof.py          # Unit tests for lsof module
+│   ├── test_curl.py          # Unit tests for curl module
 │   └── test_ping.py          # Unit tests for ping module
 ├── .flake8                   # Flake8 configuration
 ├── .gitignore
@@ -443,6 +524,10 @@ The ifconfig tool uses Linux `ioctl` system calls to query network interface inf
 ### Lsof
 
 The lsof tool reads `/proc/net/{tcp,tcp6,udp,udp6}` to enumerate open network sockets, parsing hex-encoded addresses, ports, states, UIDs, and inodes. It then scans `/proc/[pid]/fd/` to map socket inodes back to processes. Output is formatted to match `lsof -i`, showing COMMAND, PID, USER, FD, TYPE, DEVICE, NODE, and NAME columns. Requires root privileges to see all processes.
+
+### Curl
+
+The curl tool builds raw HTTP/1.1 requests and sends them over TCP sockets (with optional TLS via Python's `ssl` module). It handles chunked transfer-encoding, gzip/deflate content-encoding, and 3xx redirects. No external HTTP libraries (`requests`, `http.client`, `urllib`) are used — only `socket` and `ssl`. No root privileges required.
 
 ## License
 
