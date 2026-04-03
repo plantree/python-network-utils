@@ -1,6 +1,6 @@
 # python-network-utils
 
-A Python library for network diagnostics using raw sockets and system APIs. Provides ping, traceroute, DNS lookup (dig), network interface (ifconfig), open-socket listing (lsof), and HTTP transfer (curl) functionality both as CLI tools and as a Python API.
+A Python library for network diagnostics using raw sockets and system APIs. Provides ping, traceroute, DNS lookup (dig), network interface (ifconfig), open-socket listing (lsof), HTTP transfer (curl), and HTTP benchmarking (wrk) functionality both as CLI tools and as a Python API.
 
 ## Features
 
@@ -10,7 +10,8 @@ A Python library for network diagnostics using raw sockets and system APIs. Prov
 - **Ifconfig**: Display network interface configuration (IP, MAC, MTU, flags, stats)
 - **Lsof**: List open network sockets with process info (`lsof -i` style output)
 - **Curl**: HTTP transfer using raw TCP sockets and TLS (no `requests` / `http.client`)
-- **CLI Tools**: `netping`, `nettraceroute`, `netdig`, `netifconfig`, `netlsof`, and `netcurl` commands
+- **Wrk**: HTTP benchmarking with multi-threaded concurrent connections (wrk-compatible output)
+- **CLI Tools**: `netping`, `nettraceroute`, `netdig`, `netifconfig`, `netlsof`, `netcurl`, and `netwrk` commands
 - **Programmatic API**: Use directly in Python code
 - **Streaming Output**: Real-time output via generators
 
@@ -83,6 +84,13 @@ netcurl -v https://example.com
 netcurl -X POST -d '{"key":"val"}' -H 'Content-Type: application/json' https://httpbin.org/post
 netcurl -L http://example.com         # follow redirects
 netcurl -o output.html https://example.com
+
+# HTTP benchmarking (no root required)
+netwrk http://localhost:8080
+netwrk -t4 -c100 -d10s http://localhost:8080/index.html
+netwrk -H 'Authorization: Bearer TOKEN' http://localhost:8080/api
+netwrk --latency http://localhost:8080
+netwrk --timeout 5s -d 30s http://localhost:8080
 ```
 
 #### netping options
@@ -141,6 +149,18 @@ netcurl -o output.html https://example.com
 | `-o, --output` | Write body to FILE | stdout |
 | `-t, --timeout` | Timeout in seconds | 30 |
 | `-s, --silent` | Suppress progress/error messages | Off |
+
+#### netwrk options
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `url` | Target URL to benchmark | (required) |
+| `-t, --threads` | Number of threads | 2 |
+| `-c, --connections` | Number of concurrent connections | 10 |
+| `-d, --duration` | Duration of test (e.g. `10s`, `1m`, `500ms`) | 10s |
+| `-H, --header` | Add a request header (repeatable) | — |
+| `--timeout` | Per-request socket timeout (e.g. `2s`, `500ms`) | 2s |
+| `--latency` | Print latency distribution (50/75/90/99th percentile) | Off |
 
 ### Python API
 
@@ -244,6 +264,19 @@ print(f"Redirects: {result.redirect_count}")
 # Stream curl output (curl-style formatting)
 for line in curl_stream("http://example.com", verbose=True):
     print(line, end="")
+
+# HTTP benchmarking (wrk-style)
+from src.wrk import wrk, wrk_stream, WrkResult
+
+# Run benchmark
+result = wrk("http://localhost:8080", threads=4, connections=100, duration=10)
+print(f"Requests/sec: {result.requests_per_sec:.2f}")
+print(f"Avg latency:  {sum(result.latencies)/len(result.latencies):.2f}ms")
+print(f"Total:        {result.total_requests} requests, {result.total_bytes} bytes")
+
+# Stream wrk-compatible output
+for line in wrk_stream("http://localhost:8080", threads=2, connections=10, duration=10):
+    print(line, end="")
 ```
 
 ## API Reference
@@ -291,6 +324,13 @@ for line in curl_stream("http://example.com", verbose=True):
 |----------|-------------|----------|
 | `curl(url, method="GET", headers=None, data=None, timeout=30, follow_redirects=False)` | Perform an HTTP request | `CurlResult` |
 | `curl_stream(url, method="GET", ..., verbose=False, follow_redirects=False)` | Stream curl-style output | `Generator[str]` |
+
+### Wrk Functions
+
+| Function | Description | Returns |
+|----------|-------------|----------|
+| `wrk(url, threads=2, connections=10, duration=10, timeout=2, headers=None)` | Run an HTTP benchmark | `WrkResult` |
+| `wrk_stream(url, threads=2, connections=10, duration=10, ..., latency=False)` | Stream wrk-style output | `Generator[str]` |
 
 ### Data Classes
 
@@ -432,6 +472,33 @@ class CurlResult:
     error: Optional[str] = None
 ```
 
+#### WrkResult
+```python
+@dataclass
+class WrkResult:
+    url: str
+    duration: float = 0.0
+    threads: int = 0
+    connections: int = 0
+    total_requests: int = 0
+    total_bytes: int = 0
+    total_errors: int = 0
+    connect_errors: int = 0
+    read_errors: int = 0
+    write_errors: int = 0
+    timeout_errors: int = 0
+    status_errors: int = 0
+    latencies: List[float] = field(default_factory=list)
+    req_sec_per_thread: List[float] = field(default_factory=list)
+    error: Optional[str] = None
+
+    @property
+    def requests_per_sec(self) -> float: ...
+
+    @property
+    def transfer_per_sec(self) -> float: ...
+```
+
 ## Development
 
 ### Running Tests
@@ -482,6 +549,8 @@ python-network-utils/
 │   ├── lsof_cli.py           # CLI for netlsof command
 │   ├── curl.py               # HTTP transfer implementation
 │   ├── curl_cli.py           # CLI for netcurl command
+│   ├── wrk.py                # HTTP benchmarking implementation
+│   ├── wrk_cli.py            # CLI for netwrk command
 │   ├── ping.py               # ICMP ping implementation
 │   ├── ping_cli.py           # CLI for netping command
 │   ├── traceroute.py         # ICMP traceroute implementation
@@ -492,6 +561,7 @@ python-network-utils/
 │   ├── test_ifconfig.py      # Unit tests for ifconfig module
 │   ├── test_lsof.py          # Unit tests for lsof module
 │   ├── test_curl.py          # Unit tests for curl module
+│   ├── test_wrk.py           # Unit tests for wrk module
 │   └── test_ping.py          # Unit tests for ping module
 ├── .flake8                   # Flake8 configuration
 ├── .gitignore
@@ -528,7 +598,9 @@ The lsof tool reads `/proc/net/{tcp,tcp6,udp,udp6}` to enumerate open network so
 ### Curl
 
 The curl tool builds raw HTTP/1.1 requests and sends them over TCP sockets (with optional TLS via Python's `ssl` module). It handles chunked transfer-encoding, gzip/deflate content-encoding, and 3xx redirects. No external HTTP libraries (`requests`, `http.client`, `urllib`) are used — only `socket` and `ssl`. No root privileges required.
+### Wrk
 
+The wrk tool performs HTTP benchmarking by spawning multiple threads, each using `select()` to multiplex all its assigned connections on a single thread. Each thread maintains persistent (keep-alive) TCP connections with non-blocking I/O, sending requests and parsing responses concurrently across connections. Dead connections are automatically re-established. Latency and throughput statistics are collected per-thread and aggregated into wrk-compatible output including Thread Stats (avg, stdev, max, +/− stdev), latency percentile distribution, request/transfer rates, and socket error counts. No root privileges required.
 ## License
 
 MIT License
