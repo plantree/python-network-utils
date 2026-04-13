@@ -1,6 +1,6 @@
 # python-network-utils
 
-A Python library for network diagnostics using raw sockets and system APIs. Provides ping, traceroute, DNS lookup (dig), network interface (ifconfig), open-socket listing (lsof), HTTP transfer (curl), and HTTP benchmarking (wrk) functionality both as CLI tools and as a Python API.
+A Python library for network diagnostics using raw sockets and system APIs. Provides ping, traceroute, DNS lookup (dig), network interface (ifconfig), open-socket listing (lsof), HTTP transfer (curl), HTTP benchmarking (wrk), and port scanning (nmap) functionality both as CLI tools and as a Python API.
 
 ## Features
 
@@ -11,7 +11,8 @@ A Python library for network diagnostics using raw sockets and system APIs. Prov
 - **Lsof**: List open network sockets with process info (`lsof -i` style output)
 - **Curl**: HTTP transfer using raw TCP sockets and TLS (no `requests` / `http.client`)
 - **Wrk**: HTTP benchmarking with multi-threaded concurrent connections (wrk-compatible output)
-- **CLI Tools**: `netping`, `nettraceroute`, `netdig`, `netifconfig`, `netlsof`, `netcurl`, and `netwrk` commands
+- **Nmap**: TCP connect port scanner with non-blocking sockets and `select()` multiplexing (nmap-style output)
+- **CLI Tools**: `netping`, `nettraceroute`, `netdig`, `netifconfig`, `netlsof`, `netcurl`, `netwrk`, and `netnmap` commands
 - **Programmatic API**: Use directly in Python code
 - **Streaming Output**: Real-time output via generators
 
@@ -91,6 +92,13 @@ netwrk -t4 -c100 -d10s http://localhost:8080/index.html
 netwrk -H 'Authorization: Bearer TOKEN' http://localhost:8080/api
 netwrk --latency http://localhost:8080
 netwrk --timeout 5s -d 30s http://localhost:8080
+
+# Port scanning (no root required)
+netnmap scanme.nmap.org
+netnmap -p 22,80,443 example.com
+netnmap -p 1-1000 example.com
+netnmap --top-ports 100 example.com
+netnmap --timeout 3 --max-concurrent 512 scanme.nmap.org
 ```
 
 #### netping options
@@ -161,6 +169,16 @@ netwrk --timeout 5s -d 30s http://localhost:8080
 | `-H, --header` | Add a request header (repeatable) | — |
 | `--timeout` | Per-request socket timeout (e.g. `2s`, `500ms`) | 2s |
 | `--latency` | Print latency distribution (50/75/90/99th percentile) | Off |
+
+#### netnmap options
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `target` | Target host or IP address | (required) |
+| `-p, --ports` | Port specification (e.g. `22,80,443` or `1-1000`) | 1-10000 |
+| `--top-ports N` | Scan the N most common ports | — |
+| `--timeout` | Timeout per connection attempt (seconds) | 2.0 |
+| `--max-concurrent` | Maximum concurrent connections | 256 |
 
 ### Python API
 
@@ -277,6 +295,23 @@ print(f"Total:        {result.total_requests} requests, {result.total_bytes} byt
 # Stream wrk-compatible output
 for line in wrk_stream("http://localhost:8080", threads=2, connections=10, duration=10):
     print(line, end="")
+
+# Port scanning (nmap-style)
+from src.nmap import nmap, nmap_stream, NmapResult, PortResult
+
+# Scan specific ports
+result = nmap("scanme.nmap.org", ports="22,80,443")
+print(f"Host: {result.target} ({result.ip})")
+print(f"Scanned {result.total_scanned} ports in {result.scan_time:.2f}s")
+for p in result.open_ports:
+    print(f"  {p.port}/tcp open {p.service}")
+
+# Scan top N most common ports
+result = nmap("example.com", top_ports=100)
+
+# Stream nmap-style output
+for line in nmap_stream("scanme.nmap.org", ports="1-1000"):
+    print(line, end="")
 ```
 
 ## API Reference
@@ -331,6 +366,13 @@ for line in wrk_stream("http://localhost:8080", threads=2, connections=10, durat
 |----------|-------------|----------|
 | `wrk(url, threads=2, connections=10, duration=10, timeout=2, headers=None)` | Run an HTTP benchmark | `WrkResult` |
 | `wrk_stream(url, threads=2, connections=10, duration=10, ..., latency=False)` | Stream wrk-style output | `Generator[str]` |
+
+### Nmap Functions
+
+| Function | Description | Returns |
+|----------|-------------|----------|
+| `nmap(target, ports=None, top_ports=None, timeout=2.0, max_concurrent=256)` | Perform a TCP connect port scan | `NmapResult` |
+| `nmap_stream(target, ports=None, top_ports=None, timeout=2.0, max_concurrent=256)` | Stream nmap-style output | `Generator[str]` |
 
 ### Data Classes
 
@@ -499,6 +541,39 @@ class WrkResult:
     def transfer_per_sec(self) -> float: ...
 ```
 
+#### PortResult
+```python
+@dataclass
+class PortResult:
+    port: int
+    state: str  # "open", "closed", "filtered"
+    service: str = ""
+```
+
+#### NmapResult
+```python
+@dataclass
+class NmapResult:
+    target: str
+    ip: str = ""
+    ports: List[PortResult] = field(default_factory=list)
+    total_scanned: int = 0
+    scan_time: float = 0.0
+    error: Optional[str] = None
+
+    @property
+    def open_ports(self) -> List[PortResult]: ...
+
+    @property
+    def filtered_ports(self) -> List[PortResult]: ...
+
+    @property
+    def closed_count(self) -> int: ...
+
+    @property
+    def filtered_count(self) -> int: ...
+```
+
 ## Development
 
 ### Running Tests
@@ -551,6 +626,8 @@ python-network-utils/
 │   ├── curl_cli.py           # CLI for netcurl command
 │   ├── wrk.py                # HTTP benchmarking implementation
 │   ├── wrk_cli.py            # CLI for netwrk command
+│   ├── nmap.py               # TCP connect port scanner implementation
+│   ├── nmap_cli.py           # CLI for netnmap command
 │   ├── ping.py               # ICMP ping implementation
 │   ├── ping_cli.py           # CLI for netping command
 │   ├── traceroute.py         # ICMP traceroute implementation
@@ -598,6 +675,12 @@ The lsof tool reads `/proc/net/{tcp,tcp6,udp,udp6}` to enumerate open network so
 ### Curl
 
 The curl tool builds raw HTTP/1.1 requests and sends them over TCP sockets (with optional TLS via Python's `ssl` module). It handles chunked transfer-encoding, gzip/deflate content-encoding, and 3xx redirects. No external HTTP libraries (`requests`, `http.client`, `urllib`) are used — only `socket` and `ssl`. No root privileges required.
+### Wrk
+
+### Nmap
+
+The nmap tool performs TCP connect scans using non-blocking sockets and `select()` for I/O multiplexing. For each batch of ports (up to `max_concurrent`), it creates non-blocking TCP sockets and initiates connections. Sockets that connect immediately are marked open; those returning `EINPROGRESS` are monitored via `select()` until they become writable (open) or error out (closed/filtered). Ports that time out are marked filtered. Supports both IPv4 and IPv6. No root privileges required.
+
 ### Wrk
 
 The wrk tool performs HTTP benchmarking by spawning multiple threads, each using `select()` to multiplex all its assigned connections on a single thread. Each thread maintains persistent (keep-alive) TCP connections with non-blocking I/O, sending requests and parsing responses concurrently across connections. Dead connections are automatically re-established. Latency and throughput statistics are collected per-thread and aggregated into wrk-compatible output including Thread Stats (avg, stdev, max, +/− stdev), latency percentile distribution, request/transfer rates, and socket error counts. No root privileges required.

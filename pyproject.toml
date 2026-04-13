@@ -45,6 +45,7 @@ netifconfig = "src.ifconfig_cli:main"
 netlsof = "src.lsof_cli:main"
 netcurl = "src.curl_cli:main"
 netwrk = "src.wrk_cli:main"
+netnmap = "src.nmap_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/plantree/python-network-utils"
