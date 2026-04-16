@@ -1,6 +1,6 @@
 # python-network-utils
 
-A Python library for network diagnostics using raw sockets and system APIs. Provides ping, traceroute, DNS lookup (dig), network interface (ifconfig), open-socket listing (lsof), HTTP transfer (curl), HTTP benchmarking (wrk), and port scanning (nmap) functionality both as CLI tools and as a Python API.
+A Python library for network diagnostics using raw sockets and system APIs. Provides ping, traceroute, DNS lookup (dig), network interface (ifconfig), open-socket listing (lsof), HTTP transfer (curl), HTTP benchmarking (wrk), port scanning (nmap), and SYN scanning (nmap-syn) functionality both as CLI tools and as a Python API.
 
 ## Features
 
@@ -12,7 +12,8 @@ A Python library for network diagnostics using raw sockets and system APIs. Prov
 - **Curl**: HTTP transfer using raw TCP sockets and TLS (no `requests` / `http.client`)
 - **Wrk**: HTTP benchmarking with multi-threaded concurrent connections (wrk-compatible output)
 - **Nmap**: TCP connect port scanner with non-blocking sockets and `select()` multiplexing (nmap-style output)
-- **CLI Tools**: `netping`, `nettraceroute`, `netdig`, `netifconfig`, `netlsof`, `netcurl`, `netwrk`, and `netnmap` commands
+- **Nmap SYN**: TCP SYN (half-open) port scanner using raw sockets for stealthier scanning (requires root)
+- **CLI Tools**: `netping`, `nettraceroute`, `netdig`, `netifconfig`, `netlsof`, `netcurl`, `netwrk`, `netnmap`, and `netnmap-syn` commands
 - **Programmatic API**: Use directly in Python code
 - **Streaming Output**: Real-time output via generators
 
@@ -99,6 +100,12 @@ netnmap -p 22,80,443 example.com
 netnmap -p 1-1000 example.com
 netnmap --top-ports 100 example.com
 netnmap --timeout 3 --max-concurrent 512 scanme.nmap.org
+
+# SYN port scanning (requires root)
+sudo netnmap-syn scanme.nmap.org
+sudo netnmap-syn -p 22,80,443 example.com
+sudo netnmap-syn --top-ports 100 example.com
+sudo netnmap-syn --timeout 3 --max-concurrent 512 scanme.nmap.org
 ```
 
 #### netping options
@@ -179,6 +186,16 @@ netnmap --timeout 3 --max-concurrent 512 scanme.nmap.org
 | `--top-ports N` | Scan the N most common ports | — |
 | `--timeout` | Timeout per connection attempt (seconds) | 2.0 |
 | `--max-concurrent` | Maximum concurrent connections | 256 |
+
+#### netnmap-syn options
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `target` | Target host or IP address | (required) |
+| `-p, --ports` | Port specification (e.g. `22,80,443` or `1-1000`) | 1-10000 |
+| `--top-ports N` | Scan the N most common ports | — |
+| `--timeout` | Timeout per batch (seconds) | 2.0 |
+| `--max-concurrent` | Ports per batch | 256 |
 
 ### Python API
 
@@ -312,6 +329,18 @@ result = nmap("example.com", top_ports=100)
 # Stream nmap-style output
 for line in nmap_stream("scanme.nmap.org", ports="1-1000"):
     print(line, end="")
+
+# SYN port scanning (requires root)
+from src.nmap_syn import nmap_syn, nmap_syn_stream
+
+# SYN scan specific ports
+result = nmap_syn("scanme.nmap.org", ports="22,80,443")
+for p in result.open_ports:
+    print(f"  {p.port}/tcp open {p.service}")
+
+# Stream SYN scan output
+for line in nmap_syn_stream("scanme.nmap.org", top_ports=100):
+    print(line, end="")
 ```
 
 ## API Reference
@@ -373,6 +402,13 @@ for line in nmap_stream("scanme.nmap.org", ports="1-1000"):
 |----------|-------------|----------|
 | `nmap(target, ports=None, top_ports=None, timeout=2.0, max_concurrent=256)` | Perform a TCP connect port scan | `NmapResult` |
 | `nmap_stream(target, ports=None, top_ports=None, timeout=2.0, max_concurrent=256)` | Stream nmap-style output | `Generator[str]` |
+
+### Nmap SYN Functions
+
+| Function | Description | Returns |
+|----------|-------------|----------|
+| `nmap_syn(target, ports=None, top_ports=None, max_concurrent=256)` | Perform a TCP SYN port scan (requires root) | `NmapResult` |
+| `nmap_syn_stream(target, ports=None, top_ports=None, timeout=2.0, max_concurrent=256)` | Stream SYN scan output (requires root) | `Generator[str]` |
 
 ### Data Classes
 
@@ -628,6 +664,8 @@ python-network-utils/
 │   ├── wrk_cli.py            # CLI for netwrk command
 │   ├── nmap.py               # TCP connect port scanner implementation
 │   ├── nmap_cli.py           # CLI for netnmap command
+│   ├── nmap_syn.py           # TCP SYN (half-open) port scanner implementation
+│   ├── nmap_syn_cli.py       # CLI for netnmap-syn command
 │   ├── ping.py               # ICMP ping implementation
 │   ├── ping_cli.py           # CLI for netping command
 │   ├── traceroute.py         # ICMP traceroute implementation
@@ -680,6 +718,10 @@ The curl tool builds raw HTTP/1.1 requests and sends them over TCP sockets (with
 ### Nmap
 
 The nmap tool performs TCP connect scans using non-blocking sockets and `select()` for I/O multiplexing. For each batch of ports (up to `max_concurrent`), it creates non-blocking TCP sockets and initiates connections. Sockets that connect immediately are marked open; those returning `EINPROGRESS` are monitored via `select()` until they become writable (open) or error out (closed/filtered). Ports that time out are marked filtered. Supports both IPv4 and IPv6. No root privileges required.
+
+### Nmap SYN
+
+The SYN scanner sends raw TCP SYN packets and classifies ports based on the response: SYN-ACK means open, RST means closed, no response means filtered. Unlike the TCP connect scanner, it never completes the three-way handshake (half-open scan), making it stealthier. It constructs packets manually — building IPv4 headers with `IP_HDRINCL`, computing TCP checksums over pseudo-headers (IPv4 and IPv6), and parsing raw responses via `select()`. Requires root privileges for raw socket access.
 
 ### Wrk
 
